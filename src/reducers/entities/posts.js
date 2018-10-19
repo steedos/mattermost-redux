@@ -555,6 +555,139 @@ function posts(state = {}, action) {
     }
 }
 
+function postsInChannel(state = {}, action, prevPosts, nextPosts) {
+    switch (action.type) {
+    case PostTypes.RECEIVED_NEW_POST: {
+        const post = action.data;
+
+        const postsForChannel = state[post.channel_id];
+
+        let nextPostsForChannel;
+        if (postsForChannel) {
+            if (postsForChannel.includes(post.id)) {
+                return state;
+            }
+
+            nextPostsForChannel = [
+                ...postsForChannel,
+                post.id,
+            ];
+        } else {
+            nextPostsForChannel = [post.id];
+        }
+
+        // HARRISON This doesn't need the prev_post_id so is it actually needed on the websocket API? We're concerned
+        // about missing posts, but did we miss them with the old behaviour? What is new with the new behaviour
+        return {
+            ...state,
+            [post.channel_id]: nextPostsForChannel,
+        };
+    }
+
+    case PostTypes.RECEIVED_POSTS: {
+        const newPosts = Object.values(action.data.posts); // HARRISON this should probably use order, not posts
+
+        if (newPosts.length === 0) {
+            return state;
+        }
+
+        const postsForChannel = state[action.channelId];
+        const nextPostsForChannel = postsForChannel ? [...postsForChannel] : [];
+
+        for (const post of newPosts) {
+            // Add the post to the channel
+            if (!action.skipAddToChannel && !nextPostsForChannel.includes(post.id)) { // HARRISON not needed when we split action for thread/channel
+                // Just add the post id to the end of the order and we'll sort it out later
+                nextPostsForChannel.push(post.id); // HARRISON we shouldn't be adding random posts
+            }
+
+            // Remove any temporary posts // HARRISON or removing pending posts? I think this is from the websocket code
+            if (post.pending_post_id) {
+                const index = nextPostsForChannel.indexOf(post.pending_post_id); // HARRISON this is changing to an indexOf instead of just looking at posts directly
+                if (index !== -1) {
+                    postsForChannel.splice(index, 1);
+                }
+            }
+        }
+
+        // Sort to ensure that the most recent posts are first, with pending
+        // and failed posts first
+        nextPostsForChannel.sort((a, b) => {
+            return comparePosts(nextPosts[a], nextPosts[b]);
+        });
+
+        return {
+            ...state,
+            [action.channelId]: nextPostsForChannel,
+        };
+    }
+
+    case PostTypes.REMOVE_PENDING_POST: { // HARRISON this could probably just be a remove post
+        const post = action.data;
+
+        const postsForChannel = state[post.channel_id];
+        if (!postsForChannel) {
+            return state;
+        }
+
+        const index = postsForChannel.findIndex((postId) => postId === post.id);
+        if (index === -1) {
+            return state;
+        }
+
+        const nextPostsForChannel = [...postsForChannel];
+        nextPostsForChannel.splice(index, 1);
+
+        return {
+            ...state,
+            [post.channel_id]: nextPostsForChannel,
+        };
+    }
+
+    case PostTypes.POST_DELETED: {
+        const post = action.data;
+
+        const postsForChannel = state[post.channel_id];
+        if (!postsForChannel) {
+            return state;
+        }
+
+        const nextPostsForChannel = postsForChannel.filter((postId) => prevPosts[postId].root_id !== post.id);
+        if (nextPostsForChannel.length === postsForChannel.length) {
+            return state;
+        }
+
+        return {
+            ...state,
+            [post.channel_id]: nextPostsForChannel,
+        };
+    }
+    case PostTypes.REMOVE_POST: {
+        const post = action.data;
+
+        const postsForChannel = state[post.channel_id];
+        if (!postsForChannel) {
+            return state;
+        }
+
+        const nextPostsForChannel = postsForChannel.filter((postId) => prevPosts[postId].id !== post.id && prevPosts[postId].root_id !== post.id);
+        if (nextPostsForChannel.length === postsForChannel.length) {
+            return state;
+        }
+
+        return {
+            ...state,
+            [post.channel_id]: nextPostsForChannel,
+        };
+    }
+
+    case UserTypes.LOGOUT_SUCCESS:
+        return {};
+    default:
+        return state;
+    }
+}
+
 function selectedPostId(state = '', action) {
     switch (action.type) {
     case PostTypes.RECEIVED_POST_SELECTED:
@@ -739,12 +872,14 @@ function postsInChannelBackup(state = {}, action) {
 }
 
 export default function(state = {}, action) {
-    const {postsInChannel, postsInThread} = handlePosts(state.posts, state.postsInChannel, state.postsInThread, action);
+    const nextPosts = posts(state.posts, action);
+    const nextPostsInChannel = postsInChannel(state.postsInChannel, action, state.posts, nextPosts);
+    const {postsInThread} = handlePosts(state.posts, state.postsInChannel, state.postsInThread, action);
 
     const nextState = {
 
         // Object mapping post ids to post objects
-        posts: posts(state.posts, action),
+        posts: nextPosts,
 
         // Array that contains the pending post ids for those messages that are in transition to being created
         pendingPostIds: handlePendingPosts(state.pendingPostIds, action),
@@ -753,7 +888,7 @@ export default function(state = {}, action) {
         sendingPostIds: handleSendingPosts(state.sendingPostIds, action),
 
         // Object mapping channel ids to an array of posts ids in that channel with the most recent post first
-        postsInChannel,
+        postsInChannel: nextPostsInChannel,
 
         // Object mapping post root ids to an array of posts ids in that thread with no guaranteed order
         postsInThread,
