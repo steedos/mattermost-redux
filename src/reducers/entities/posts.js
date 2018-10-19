@@ -688,6 +688,159 @@ function postsInChannel(state = {}, action, prevPosts, nextPosts) {
     }
 }
 
+function postsInThread(state = {}, action) {
+    switch (action.type) {
+    case PostTypes.RECEIVED_NEW_POST: {
+        const post = action.data;
+
+        if (!post.root_id) {
+            return state;
+        }
+
+        const postsForThread = state[post.root_id];
+
+        let nextPostsForThread;
+        if (postsForThread) {
+            if (postsForThread.includes(post.id)) {
+                return state;
+            }
+
+            nextPostsForThread = [
+                ...postsForThread,
+                post.id,
+            ];
+        } else {
+            nextPostsForThread = [post.id];
+        }
+
+        return {
+            ...state,
+            [post.root_id]: nextPostsForThread,
+        };
+    }
+
+    case PostTypes.RECEIVED_POSTS: {
+        const newPosts = Object.values(action.data.posts); // HARRISON this should probably use order, not posts
+
+        if (newPosts.length === 0) {
+            return state;
+        }
+
+        const nextState = {};
+
+        for (const post of newPosts) {
+            if (!post.root_id) {
+                continue;
+            }
+
+            let nextPostsForThread = nextState[post.root_id];
+            if (!nextPostsForThread) {
+                const postsForThread = state[post.root_id];
+                nextPostsForThread = postsForThread ? [...postsForThread] : [];
+
+                nextState[post.root_id] = nextPostsForThread;
+            }
+
+            // Add the post to the thread
+            if (!nextPostsForThread.includes(post.id)) {
+                nextPostsForThread.push(post.id);
+            }
+        }
+
+        // HARRISON it's interesting that we don't sort these since it means that we may not need to sort the channel ones
+
+        if (Object.keys(nextState).length === 0) {
+            return state;
+        }
+
+        return {
+            ...state,
+            ...nextState,
+        };
+    }
+
+    case PostTypes.REMOVE_PENDING_POST: { // HARRISON this could probably just be a remove post
+        const post = action.data;
+
+        if (!post.root_id) {
+            return state;
+        }
+
+        const postsForThread = state[post.root_id];
+        if (!postsForThread) {
+            return state;
+        }
+
+        const index = postsForThread.findIndex((postId) => postId === post.id);
+        if (index === -1) {
+            return state;
+        }
+
+        const nextPostsForThread = [...postsForThread];
+        nextPostsForThread.splice(index, 1);
+
+        return {
+            ...state,
+            [post.root_id]: nextPostsForThread,
+        };
+    }
+
+    case PostTypes.POST_DELETED: {
+        const post = action.data;
+
+        const postsForThread = state[post.id];
+        if (!postsForThread) {
+            return state;
+        }
+
+        const nextState = {...state};
+        Reflect.deleteProperty(nextState, post.id);
+
+        return nextState;
+    }
+    case PostTypes.REMOVE_POST: {
+        const post = action.data;
+
+        if (post.root_id) {
+            // This is a comment, so remove it from the thread
+            const postsForThread = state[post.root_id];
+            if (!postsForThread) {
+                return state;
+            }
+
+            const index = postsForThread.findIndex((postId) => postId === post.id);
+            if (index === -1) {
+                return state;
+            }
+
+            const nextPostsForThread = [...postsForThread];
+            nextPostsForThread.splice(index, 1);
+
+            return {
+                ...state,
+                [post.root_id]: nextPostsForThread,
+            };
+        }
+
+        // This may be a root post, so remove its thread
+        const postsForThread = state[post.id];
+        if (!postsForThread) {
+            return state;
+        }
+
+        const nextState = {...state};
+        Reflect.deleteProperty(nextState, post.id);
+
+        return nextState;
+    }
+
+    case UserTypes.LOGOUT_SUCCESS:
+        return {};
+    default:
+        return state;
+    }
+}
+
 function selectedPostId(state = '', action) {
     switch (action.type) {
     case PostTypes.RECEIVED_POST_SELECTED:
@@ -874,7 +1027,6 @@ function postsInChannelBackup(state = {}, action) {
 export default function(state = {}, action) {
     const nextPosts = posts(state.posts, action);
     const nextPostsInChannel = postsInChannel(state.postsInChannel, action, state.posts, nextPosts);
-    const {postsInThread} = handlePosts(state.posts, state.postsInChannel, state.postsInThread, action);
 
     const nextState = {
 
@@ -891,7 +1043,7 @@ export default function(state = {}, action) {
         postsInChannel: nextPostsInChannel,
 
         // Object mapping post root ids to an array of posts ids in that thread with no guaranteed order
-        postsInThread,
+        postsInThread: postsInThread(state.postsInThread, action),
 
         // The current selected post
         selectedPostId: selectedPostId(state.selectedPostId, action),
