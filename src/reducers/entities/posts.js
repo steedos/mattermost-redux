@@ -439,6 +439,122 @@ function handlePosts(posts = {}, postsInChannel = {}, postsInThread = {}, action
     }
 }
 
+function posts(state = {}, action) {
+    switch (action.type) {
+    case PostTypes.RECEIVED_POST:
+    case PostTypes.RECEIVED_NEW_POST: {
+        const post = action.data;
+
+        return {
+            ...state,
+            [post.id]: post,
+        };
+    }
+
+    case PostTypes.RECEIVED_POSTS:
+    case SearchTypes.RECEIVED_SEARCH_POSTS:
+    case SearchTypes.RECEIVED_SEARCH_FLAGGED_POSTS: {
+        const newPosts = Object.values(action.data.posts);
+
+        if (newPosts.length === 0) {
+            return state;
+        }
+
+        const nextState = {...state};
+
+        for (const post of newPosts) {
+            if (post.delete_at > 0) {
+                // Mark the post as deleted if we have it
+                if (nextState[post.id]) {
+                    nextState[post.id] = {
+                        ...post,
+                        state: Posts.POST_DELETED,
+                        file_ids: [],
+                        has_reactions: false,
+                    };
+                } else {
+                    continue;
+                }
+            }
+
+            // Only change the stored post if it's changed since we last received it
+            if (!nextState[post.id] || nextState[post.id].update_at < post.update_at) {
+                nextState[post.id] = post;
+            }
+
+            // Remove any temporary posts
+            if (nextState[post.pending_post_id]) {
+                Reflect.deleteProperty(nextState, post.pending_post_id);
+            }
+        }
+
+        return nextState;
+    }
+
+    case PostTypes.REMOVE_PENDING_POST: {
+        const pendingPostId = action.data.id;
+
+        const nextState = {...state};
+        Reflect.deleteProperty(nextState, pendingPostId);
+
+        return nextState;
+    }
+
+    case PostTypes.POST_DELETED: {
+        const post = action.data;
+
+        if (!post || !state[post.id]) {
+            return state;
+        }
+
+        // Mark the post as deleted
+        const nextState = {
+            ...state,
+            [post.id]: {
+                ...post, // HARRISON this is a change from the previous version where it would use the stored post with these updated fields
+                state: Posts.POST_DELETED,
+                file_ids: [],
+                has_reactions: false,
+            },
+        };
+
+        // Remove any of its comments
+        for (const otherPost of Object.values(state)) { // HARRISON this is a change from the previous version because it would only look for comments in the same channel
+            if (otherPost.root_id === post.id) {
+                Reflect.deleteProperty(nextState, otherPost.id);
+            }
+        }
+
+        return nextState;
+    }
+    case PostTypes.REMOVE_POST: {
+        const post = action.data;
+
+        if (!state[post.id]) {
+            return state;
+        }
+
+        // Remove the post itself
+        const nextState = {...state};
+        Reflect.deleteProperty(nextState, post.id);
+
+        // Remove any of its comments
+        for (const otherPost of Object.values(state)) { // HARRISON this is a change from the previous version because it would only look for comments in the same channel
+            if (otherPost.root_id === post.id) {
+                Reflect.deleteProperty(nextState, otherPost.id);
+            }
+        }
+
+        return nextState;
+    }
+
+    case UserTypes.LOGOUT_SUCCESS:
+        return {};
+    default:
+        return state;
+    }
+}
+
 function selectedPostId(state = '', action) {
     switch (action.type) {
     case PostTypes.RECEIVED_POST_SELECTED:
@@ -623,12 +739,12 @@ function postsInChannelBackup(state = {}, action) {
 }
 
 export default function(state = {}, action) {
-    const {posts, postsInChannel, postsInThread} = handlePosts(state.posts, state.postsInChannel, state.postsInThread, action);
+    const {postsInChannel, postsInThread} = handlePosts(state.posts, state.postsInChannel, state.postsInThread, action);
 
     const nextState = {
 
         // Object mapping post ids to post objects
-        posts,
+        posts: posts(state.posts, action),
 
         // Array that contains the pending post ids for those messages that are in transition to being created
         pendingPostIds: handlePendingPosts(state.pendingPostIds, action),
