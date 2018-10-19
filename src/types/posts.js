@@ -38,7 +38,6 @@ export type PostsState = {|
     posts: {[string]: Post},
     postsInChannel: {[string]: Array<string>},
     postsInThread: {[string]: Array<string>},
-    postsInChannelBackup: {[string]: Array<string>},
     selectedPostId: string,
     currentFocusedPostId: string,
     messagesHistory: {|

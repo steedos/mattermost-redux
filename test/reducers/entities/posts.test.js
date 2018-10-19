@@ -38,7 +38,6 @@ describe('Reducers.posts', () => {
                 postsInThread: {},
                 pendingPostIds: ['other_post_id'],
                 sendingPostIds: [],
-                postsInChannelBackup: {},
             },
         };
 

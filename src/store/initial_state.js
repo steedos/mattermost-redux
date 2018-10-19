@@ -48,7 +48,6 @@ const state: GlobalState = {
             posts: {},
             postsInChannel: {},
             postsInThread: {},
-            postsInChannelBackup: {},
             selectedPostId: '',
             currentFocusedPostId: '',
             messagesHistory: {
