@@ -64,7 +64,9 @@ export default keyMirror({
 
     RECEIVED_POST: null,
     RECEIVED_NEW_POST: null,
-    RECEIVED_POSTS: null,
+    RECEIVED_POSTS: null, // HARRISON separate this into RECEIVED_POSTS_IN_CHANNEL and RECEIVED_POSTS_IN_THREAD
+    RECEIVED_POSTS_IN_CHANNEL: null,
+    RECEIVED_POSTS_IN_THREAD: null,
     RECEIVED_FOCUSED_POST: null,
     RECEIVED_POST_SELECTED: null,
     RECEIVED_EDIT_POST: null,
