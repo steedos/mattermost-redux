@@ -113,7 +113,7 @@ export function fileIdsByPostId(state = {}, action) {
 }
 
 function storeFilesIdsForPost(state, post) {
-    if (!post.metadata) {
+    if (!post.metadata || !post.metadata.files) {
         return state;
     }
 
