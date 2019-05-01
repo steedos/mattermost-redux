@@ -77,7 +77,7 @@ export default {
             mobileSectionSeperator: '#ededf0',
             mobileTabBg: '#f8f8f8',
             mobileTabTextColor: '#a6a8ab',
-            mobileTabSelectedTextColor: '#13a0d4',
+            mobileTabSelectedTextColor: '#222c3f',
             mobileNavBarBg: '#222c3f',
             mobileNavBarTextColor: '#ffffff',
         },
